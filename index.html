@@ -91,16 +91,24 @@
 
             <div class="results-container">
                 <div class="results-header">
+                    <div class="view-toggle">
+                        <button class="view-toggle-btn active" data-view="institutions" onclick="switchView('institutions')">
+                            <i class="fas fa-university"></i> Institutions
+                        </button>
+                        <button class="view-toggle-btn" data-view="people" onclick="switchView('people')">
+                            <i class="fas fa-user"></i> Researchers
+                        </button>
+                    </div>
                     <div class="results-stats">
                         <div class="stat-item">
                             <i class="fas fa-university"></i>
                             <span id="totalUniversities">0</span>
-                            <label>Universities</label>
+                            <label id="statPrimaryLabel">Universities</label>
                         </div>
                         <div class="stat-item">
                             <i class="fas fa-users"></i>
                             <span id="totalScore">0</span>
-                            <label>Authors</label>
+                            <label id="statSecondaryLabel">Authors</label>
                         </div>
                         <div class="stat-item">
                             <i class="fas fa-filter"></i>
@@ -125,7 +133,7 @@
                         <thead>
                             <tr>
                                 <th class="rank-col">Rank</th>
-                                <th class="institution-col">Institution</th>
+                                <th class="institution-col" id="institutionColHeader">Institution</th>
                                 <th class="score-col">Impact Score</th>
                             </tr>
                         </thead>

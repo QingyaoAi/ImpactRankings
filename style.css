@@ -343,6 +343,29 @@ body {
     margin-top: var(--spacing-2);
 }
 
+.field-category-group {
+    margin-top: var(--spacing-2);
+}
+
+.field-category-group:first-child {
+    margin-top: 0;
+}
+
+.field-category-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--gray-500);
+    padding: 2px var(--spacing-2) 4px;
+    border-bottom: 1px solid var(--gray-200);
+    margin-bottom: 2px;
+}
+
+.conf-checkbox-item {
+    padding-left: var(--spacing-3) !important;
+}
+
 .field-checkboxes-inline {
     display: flex;
     flex-direction: row;
@@ -550,8 +573,72 @@ input:focus + .slider {
     background: var(--gray-50);
     border-bottom: 1px solid var(--gray-200);
     display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-2);
     justify-content: space-between;
     align-items: center;
+}
+
+/* View toggle (Institutions / Researchers) */
+.view-toggle {
+    display: flex;
+    border: 1px solid var(--gray-300);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.view-toggle-btn {
+    padding: var(--spacing-1) var(--spacing-3);
+    background: white;
+    border: none;
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    color: var(--gray-600);
+    cursor: pointer;
+    transition: var(--transition-fast);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.view-toggle-btn + .view-toggle-btn {
+    border-left: 1px solid var(--gray-300);
+}
+
+.view-toggle-btn.active {
+    background: var(--primary-color);
+    color: white;
+}
+
+.view-toggle-btn:not(.active):hover {
+    background: var(--gray-100);
+}
+
+/* People ranking rows */
+.person-name-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-2);
+}
+
+.person-links {
+    display: flex;
+    gap: var(--spacing-1);
+    align-items: center;
+}
+
+.person-affiliation {
+    font-size: var(--font-size-xs);
+    color: var(--gray-500);
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.person-univ {
+    color: var(--gray-600);
 }
 
 .results-stats {

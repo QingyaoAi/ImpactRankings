@@ -7,19 +7,40 @@ let selectedCountry = 'all';
 let expandedRows = new Set();
 let facultyFieldStats = {};
 let RENDERED_FIELDS = [];
+let conferenceUnivScores = {}; // { confName: { univName: totalScore } }
+let viewMode = 'institutions'; // 'institutions' | 'people'
 
+// Individual conferences as the primary fields
 const ACTIVE_FIELDS = [
-    "Machine Learning",
-    "Computer Vision & Image Processing",
-    "Natural Language Processing",
-    "The Web & Information Retrieval",
+    "ICML",
+    "NEURIPS",
+    "CVPR",
+    "ECCV",
+    "ICCV",
+    "ACL",
+    "EMNLP",
+    "SIGIR",
+    "WWW",
 ];
 
+// Maps each conference to its parent category (for grouping checkboxes)
+const CONFERENCE_CATEGORY_MAP = {
+    'ICML':    'Machine Learning',
+    'NEURIPS': 'Machine Learning',
+    'CVPR':    'Computer Vision & Image Processing',
+    'ECCV':    'Computer Vision & Image Processing',
+    'ICCV':    'Computer Vision & Image Processing',
+    'ACL':     'Natural Language Processing',
+    'EMNLP':   'Natural Language Processing',
+    'SIGIR':   'The Web & Information Retrieval',
+    'WWW':     'The Web & Information Retrieval',
+};
+
 const DISPLAY_LABELS = {
-    'Machine Learning': 'Machine Learning',
-    'Computer Vision & Image Processing': 'Computer Vision & Image Processing',
-    'Natural Language Processing': 'Natural Language Processing',
-    'The Web & Information Retrieval': 'The Web & Information Retrieval'
+    'ICML': 'ICML', 'NEURIPS': 'NeurIPS',
+    'CVPR': 'CVPR', 'ECCV': 'ECCV', 'ICCV': 'ICCV',
+    'ACL': 'ACL', 'EMNLP': 'EMNLP',
+    'SIGIR': 'SIGIR', 'WWW': 'WWW',
 };
 
 const EPS = 1e-9;
@@ -46,51 +67,69 @@ async function loadCSV(filePath) {
 }
 
 async function initialize() {
-    // data = await loadCSV('3_f_1.csv');
-    // facultyData = await loadCSV('3_faculty_score.csv');
     data = await loadCSV('4_f_log_ranking.csv');
     facultyData = await loadCSV('4_faculty_logscore.csv');
 
-    // Extract categories dynamically
-    if (data.length > 0) {
-        const columns = Object.keys(data[0]);
-        categories = columns.slice(2); // Assume categories start at index 2
-    }
+    buildConferenceUnivScores();
 
     renderFieldCheckboxes();
     setupFieldFilter();
     computeFieldStats();
-    // computeFacultyFieldStats();
     setupRegionFilter();
     setupCountryFilter();
     displayRankings();
 }
 
+function buildConferenceUnivScores() {
+    conferenceUnivScores = {};
+    facultyData.forEach(row => {
+        const conf = row.Conference?.trim();
+        const univ = row.University?.trim();
+        const score = parseFloat(row.Score) || 0;
+        if (!conf || !univ || score <= 0) return;
+        if (!conferenceUnivScores[conf]) conferenceUnivScores[conf] = {};
+        conferenceUnivScores[conf][univ] = (conferenceUnivScores[conf][univ] || 0) + score;
+    });
+}
+
 function allowedFields() {
-    const headers = data.length ? Object.keys(data[0]) : [];
-    return ACTIVE_FIELDS.filter(f => headers.includes(f));
-  }
-  
+    return ACTIVE_FIELDS.filter(f => conferenceUnivScores[f] && Object.keys(conferenceUnivScores[f]).length > 0);
+}
 
 function renderFieldCheckboxes() {
     const container = document.getElementById('fieldCheckboxContainer');
-    const headers = data.length ? Object.keys(data[0]) : [];
 
-    RENDERED_FIELDS = ACTIVE_FIELDS.filter(f => headers.includes(f));
+    RENDERED_FIELDS = allowedFields();
 
-    container.innerHTML = RENDERED_FIELDS.map(f => {
-        const id = toId(f);
-        const label = DISPLAY_LABELS[f] || f;
+    // Group conferences by parent category
+    const grouped = {};
+    RENDERED_FIELDS.forEach(conf => {
+        const cat = CONFERENCE_CATEGORY_MAP[conf] || 'Other';
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(conf);
+    });
+
+    container.innerHTML = Object.entries(grouped).map(([cat, confs]) => {
+        const checkboxesHtml = confs.map(conf => {
+            const id = toId(conf);
+            const label = DISPLAY_LABELS[conf] || conf;
+            return `
+                <label class="checkbox-item conf-checkbox-item" for="${id}">
+                    <input type="checkbox" id="${id}" class="field-checkbox" data-field="${conf}" checked>
+                    <span>${label}</span>
+                </label>
+            `;
+        }).join('');
         return `
-            <label class="checkbox-item" for="${id}">
-                <input type="checkbox" id="${id}" class="field-checkbox" data-field="${f}" checked>
-                <span>${label}</span>
-            </label>
+            <div class="field-category-group">
+                <div class="field-category-label">${cat}</div>
+                ${checkboxesHtml}
+            </div>
         `;
     }).join('');
 
     if (RENDERED_FIELDS.length === 0) {
-        console.warn('None of ACTIVE_FIELDS exist in CSV headers:', ACTIVE_FIELDS);
+        console.warn('No conference data found. Check facultyData Conference field.');
     }
 }
 
@@ -133,23 +172,15 @@ function refreshCountryFilterOptions() {
 
 function computeFieldStats() {
     fieldStats = {};
-    // const cols = (categories && categories.length) ? categories : ACTIVE_FIELDS;
-    // const cols = allowedFields();
     const cols = RENDERED_FIELDS.length ? RENDERED_FIELDS : ACTIVE_FIELDS;
-    // const cols = ACTIVE_FIELDS;
-    cols.forEach(cat => {
-        const vals = data
-            .map(r => parseFloat(r[cat]))
-            .filter(v => !isNaN(v) && v > 0);
+    cols.forEach(conf => {
+        const univScores = conferenceUnivScores[conf] || {};
+        const vals = Object.values(univScores).filter(v => v > 0);
         const n   = vals.length;
         const sum = n ? vals.reduce((a, b) => a + b, 0) : 0;
         const mean = n ? sum / n : 0;
-        // const varSample = n>1 ? vals.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(n-1) : 0;
-        // const std = Math.sqrt(varSample);
-        // fieldStats[cat] = { mean, std };
-        // fieldStats[cat] = { mean };
         const scale = sum > EPS ? (FIELD_TARGET_TOTAL / sum) : 0;
-        fieldStats[cat] = { mean, count: n, sum, scale };
+        fieldStats[conf] = { mean, count: n, sum, scale };
     });
 }
 
@@ -244,10 +275,9 @@ function getSelectedCategories() {
 }
 
 function getRawScore(univ, field) {
-    const row = data.find(e => e.University === univ);
-    if (!row) return 0;
-    const s = parseFloat(row[field]);
-    return isNaN(s) ? 0 : s;
+    const univScores = conferenceUnivScores[field];
+    if (!univScores) return 0;
+    return univScores[univ] || 0;
 }
 
 function getNormalizedScore(univ, field) {
@@ -277,50 +307,37 @@ function getNormalizedScore(univ, field) {
 // }
 
 function getFacultyForUniversity(universityName, selectedCategories) {
-    // First, get ALL faculty data for this university to calculate main fields from all fields
+    // selectedCategories now contains conference names (e.g. 'SIGIR', 'WWW')
     const allFacultyForUniversity = facultyData.filter(faculty => {
         return faculty.University === universityName;
     });
-    
-    // Then filter by selected categories to determine which faculty to show
-    const filteredFaculty = allFacultyForUniversity.filter(faculty => {
-        const matchesCategory = selectedCategories.length === 0 || 
-                                selectedCategories.includes(faculty.Category);
-        return matchesCategory;
-    });
 
     const facultyMap = new Map();
-    
-    // Process ALL faculty data to build complete field scores for main field calculation
+
     allFacultyForUniversity.forEach(faculty => {
         const name = faculty['Faculty Name'] || 'Unknown';
         const rawScore = parseFloat(faculty.Score) || 0;
-        const category = faculty.Category || 'Unknown';
-        
-        // Normalize faculty score by field mean
-        // const stats = fieldStats[category] || { mean: 1 };
-        // const mean = stats.mean > EPS ? stats.mean : 1;
-        // const normalizedScore = rawScore / mean;
-        const normalizedScore = normalizeFieldValue(rawScore, category);
-        
+        const conf = faculty.Conference?.trim() || 'Unknown';
+
+        const normalizedScore = normalizeFieldValue(rawScore, conf);
+
         if (!facultyMap.has(name)) {
             facultyMap.set(name, {
                 name,
                 totalScore: 0,
                 paperCount: 0,
-                rawScore: 0,  // Sum raw scores for total paper contributions
+                rawScore: 0,
                 categoriesSet: new Set(),
                 fieldScores: {},
-                hasSelectedCategory: false  // Track if faculty has contributions in selected categories
+                hasSelectedCategory: false
             });
         }
-        
+
         const facultyInfo = facultyMap.get(name);
-        facultyInfo.categoriesSet.add(category);
-        facultyInfo.fieldScores[category] = (facultyInfo.fieldScores[category] || 0) + normalizedScore;
-        
-        // Only add to totalScore and counts if this category is in selected categories
-        if (selectedCategories.length === 0 || selectedCategories.includes(category)) {
+        facultyInfo.categoriesSet.add(conf);
+        facultyInfo.fieldScores[conf] = (facultyInfo.fieldScores[conf] || 0) + normalizedScore;
+
+        if (selectedCategories.length === 0 || selectedCategories.includes(conf)) {
             facultyInfo.totalScore += normalizedScore;
             facultyInfo.rawScore += rawScore;
             facultyInfo.paperCount += 1;
@@ -537,11 +554,11 @@ function createInlineChart(facultyName) {
     const facultyPapers = facultyData.filter(faculty => faculty['Faculty Name'] === facultyName);
     
     facultyPapers.forEach(paper => {
-        const category = paper.Category;
-        if (!fieldStats[category]) {
-            fieldStats[category] = 0;
+        const conf = paper.Conference?.trim() || paper.Category;
+        if (!fieldStats[conf]) {
+            fieldStats[conf] = 0;
         }
-        fieldStats[category]++;
+        fieldStats[conf]++;
     });
     
     const totalPapers = Object.values(fieldStats).reduce((sum, count) => sum + count, 0);
@@ -583,109 +600,112 @@ function createInlineChart(facultyName) {
 
 function getFieldAbbreviation(field) {
     const abbreviations = {
-        'Machine Learning': 'ML',
-        'Computer Vision & Image Processing': 'Vision',
-        'Natural Language Processing': 'NLP',
-        'Artificial Intelligence': 'AI',
-        'The Web & Information Retrieval': 'WEB+IR',
-        'Computer Architecture': 'Arch',
-        'Computer Networks': 'Networks',
-        'Computer Security': 'Security',
-        'Databases': 'DB',
-        'Design Automation': 'EDA',
-        'Embedded & Real-time Systems': 'Embedded',
-        'High-performance Computing': 'HPC',
-        'Mobile Computing': 'Mobile',
-        'Measurement & Performance Analysis': 'Metrics',
-        'Operating Systems': 'OS',
-        'Programming Languages': 'PL',
-        'Software Engineering': 'SE',
-        'Algorithms & Complexity': 'Theory',
-        'Cryptography': 'Crypto',
-        'Logic & Verification': 'Logic',
-        'Computational Biology': 'Comp. Bio',
-        'Computer Graphics': 'Graphics',
-        'Computer Science Education': 'CSEd',
-        'Economics & Computation': 'ECom',
-        'Human-Computer Interaction': 'HCI',
-        'Robotics': 'Robotics',
-        'Visualization': 'Visualization'
+        'ICML': 'ICML', 'NEURIPS': 'NeurIPS',
+        'CVPR': 'CVPR', 'ECCV': 'ECCV', 'ICCV': 'ICCV',
+        'ACL': 'ACL', 'EMNLP': 'EMNLP',
+        'SIGIR': 'SIGIR', 'WWW': 'WWW',
     };
     return abbreviations[field] || field.substring(0, 8);
 }
 
 function getFieldColorClass(field) {
     const colorClasses = {
-        'Machine Learning': 'field-ml',
-        'Computer Vision & Image Processing': 'field-vision',
-        'Natural Language Processing': 'field-nlp',
-        'The Web & Information Retrieval': 'field-web-ir'
+        'ICML': 'field-ml', 'NEURIPS': 'field-ml',
+        'CVPR': 'field-vision', 'ECCV': 'field-vision', 'ICCV': 'field-vision',
+        'ACL': 'field-nlp', 'EMNLP': 'field-nlp',
+        'SIGIR': 'field-web-ir', 'WWW': 'field-web-ir',
     };
     return colorClasses[field] || 'field-default';
 }
 
+function switchView(mode) {
+    viewMode = mode;
+    document.querySelectorAll('.view-toggle-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.view === mode);
+    });
+    expandedRows.clear();
+
+    const colHeader = document.getElementById('institutionColHeader');
+    const primaryLabel = document.getElementById('statPrimaryLabel');
+    const secondaryLabel = document.getElementById('statSecondaryLabel');
+    if (mode === 'people') {
+        if (colHeader) colHeader.textContent = 'Researcher';
+        if (primaryLabel) primaryLabel.textContent = 'Researchers';
+        if (secondaryLabel) secondaryLabel.textContent = 'Universities';
+    } else {
+        if (colHeader) colHeader.textContent = 'Institution';
+        if (primaryLabel) primaryLabel.textContent = 'Universities';
+        if (secondaryLabel) secondaryLabel.textContent = 'Authors';
+    }
+    displayRankings();
+}
+
 function displayRankings() {
     showLoadingSpinner();
-    
-    // Simulate loading delay for better UX
     setTimeout(() => {
-        const calculatedScores = [];
-        const seenUniversities = new Set();
-        const selectedCats = getSelectedCategories();
-
-        data.forEach(university => {
-            if (selectedRegion !== 'all' && university.Continent) {
-                const match = university.Continent.trim().toLowerCase() === selectedRegion.toLowerCase();
-                if (!match) return;
-            }
-            if (selectedCountry !== 'all') {
-                const country = (university.Country || '').trim();
-                if (!country || country !== selectedCountry) return;
-            }
-
-            let totalScore = 0;
-            selectedCats.forEach(cat => {
-                totalScore += getNormalizedScore(university.University, cat);
-            });
-
-            if (!seenUniversities.has(university.University) && totalScore > 0) {
-                calculatedScores.push({
-                    University: university.University,
-                    Continent: university.Continent || 'Unknown',
-                    Score: totalScore
-                });
-                seenUniversities.add(university.University);
-            }
-        });
-
-        calculatedScores.sort((a, b) => b.Score - a.Score);
-
-        lastFiltered = calculatedScores;
-        updateStats(calculatedScores);
-        displayAllRankings(calculatedScores);
+        if (viewMode === 'people') {
+            displayPeopleRankingData();
+        } else {
+            displayInstitutionRankingData();
+        }
         hideLoadingSpinner();
     }, 300);
 }
 
-function displayAllRankings(data) {
+function displayInstitutionRankingData() {
+    const calculatedScores = [];
+    const seenUniversities = new Set();
+    const selectedCats = getSelectedCategories();
+
+    data.forEach(university => {
+        if (selectedRegion !== 'all' && university.Continent) {
+            if (university.Continent.trim().toLowerCase() !== selectedRegion.toLowerCase()) return;
+        }
+        if (selectedCountry !== 'all') {
+            const country = (university.Country || '').trim();
+            if (!country || country !== selectedCountry) return;
+        }
+
+        let totalScore = 0;
+        selectedCats.forEach(cat => {
+            totalScore += getNormalizedScore(university.University, cat);
+        });
+
+        if (!seenUniversities.has(university.University) && totalScore > 0) {
+            calculatedScores.push({
+                University: university.University,
+                Continent: university.Continent || 'Unknown',
+                Score: totalScore
+            });
+            seenUniversities.add(university.University);
+        }
+    });
+
+    calculatedScores.sort((a, b) => b.Score - a.Score);
+    lastFiltered = calculatedScores;
+    updateStats(calculatedScores);
+    renderInstitutionTable(calculatedScores);
+}
+
+function renderInstitutionTable(rankings) {
     const table = document.getElementById('rankingTable');
     const tableBody = table.querySelector('tbody');
     tableBody.innerHTML = '';
 
-    data.forEach((university, index) => {
+    rankings.forEach((university, index) => {
         const row = tableBody.insertRow();
         row.classList.add('university-row', 'fade-in');
-        
-        const rank = index + 1;
+
         const countryFlag = getCountryFlag(university.University);
         const flagHtml = countryFlag ? `<img src="${countryFlag}" alt="Flag" class="country-flag-img" onerror="this.style.display='none'">` : '';
         const chartIcon = generateChartIcon(university.University);
-        
-        const universityCell = `
-            <td class="rank-col">${rank}</td>
+        const safeName = university.University.replace(/'/g, "\\'");
+
+        row.innerHTML = `
+            <td class="rank-col">${index + 1}</td>
             <td class="institution-col university-name-cell">
-                <span class="expand-icon" onclick="toggleUniversityDropdown('${university.University.replace(/'/g, "\\'")}', this.closest('tr'))">▶</span>
-                <span class="university-name" title="View details" onclick="toggleUniversityDropdown('${university.University.replace(/'/g, "\\'")}', this.closest('tr'))">${university.University}</span>
+                <span class="expand-icon" onclick="toggleUniversityDropdown('${safeName}', this.closest('tr'))">▶</span>
+                <span class="university-name" title="View details" onclick="toggleUniversityDropdown('${safeName}', this.closest('tr'))">${university.University}</span>
                 ${flagHtml}
                 ${chartIcon}
             </td>
@@ -693,15 +713,94 @@ function displayAllRankings(data) {
                 <span class="score-value">${university.Score.toFixed(2)}</span>
             </td>
         `;
-        
-        row.innerHTML = universityCell;
-        
-        // Re-expand if this university was previously expanded
+
         if (expandedRows.has(university.University)) {
-            setTimeout(() => {
-                toggleUniversityDropdown(university.University, row);
-            }, 0);
+            setTimeout(() => toggleUniversityDropdown(university.University, row), 0);
         }
+    });
+}
+
+function displayPeopleRankingData() {
+    const selectedCats = getSelectedCategories();
+    const personMap = new Map();
+
+    facultyData.forEach(row => {
+        const conf = row.Conference?.trim();
+        if (selectedCats.length > 0 && !selectedCats.includes(conf)) return;
+
+        const name = row['Faculty Name']?.trim();
+        const univ = row.University?.trim();
+        if (!name || !univ) return;
+
+        // Apply geographic filters via the university's metadata
+        const univData = data.find(d => d.University === univ);
+        if (selectedRegion !== 'all') {
+            const cont = univData?.Continent?.trim().toLowerCase() || '';
+            if (cont !== selectedRegion.toLowerCase()) return;
+        }
+        if (selectedCountry !== 'all') {
+            if ((univData?.Country || '').trim() !== selectedCountry) return;
+        }
+
+        const rawScore = parseFloat(row.Score) || 0;
+        const normScore = normalizeFieldValue(rawScore, conf);
+        if (!(normScore > 0)) return;
+
+        // Key on name+university to distinguish same-name researchers at different schools
+        const key = name + '\x00' + univ;
+        if (!personMap.has(key)) {
+            personMap.set(key, { name, university: univ, totalScore: 0, conferences: new Set() });
+        }
+        const p = personMap.get(key);
+        p.totalScore += normScore;
+        p.conferences.add(conf);
+    });
+
+    const people = Array.from(personMap.values())
+        .filter(p => p.totalScore > 0)
+        .sort((a, b) => b.totalScore - a.totalScore);
+
+    lastFiltered = people;
+    updateStatsPeople(people);
+    renderPeopleTable(people);
+}
+
+function renderPeopleTable(people) {
+    const table = document.getElementById('rankingTable');
+    const tableBody = table.querySelector('tbody');
+    tableBody.innerHTML = '';
+
+    people.forEach((person, index) => {
+        const row = tableBody.insertRow();
+        row.classList.add('university-row', 'fade-in');
+
+        const flag = getCountryFlag(person.university);
+        const flagHtml = flag ? `<img src="${flag}" alt="" class="country-flag-img" onerror="this.style.display='none'">` : '';
+
+        const badges = Array.from(person.conferences)
+            .sort()
+            .map(conf => `<span class="field-badge ${getFieldColorClass(conf)}" title="${conf}">${getFieldAbbreviation(conf)}</span>`)
+            .join(' ');
+
+        const googleScholarLink = generateGoogleScholarLink(person.name);
+        const dblpLink = generateDBLPLink(person.name);
+
+        row.innerHTML = `
+            <td class="rank-col">${index + 1}</td>
+            <td class="institution-col">
+                <div class="person-name-row">
+                    <span class="university-name">${person.name}</span>
+                    <span class="person-links">
+                        <a href="${dblpLink}" target="_blank" rel="noopener noreferrer" class="info-link" title="DBLP"><i class="fas fa-file-alt"></i></a>
+                        <a href="${googleScholarLink}" target="_blank" rel="noopener noreferrer" class="info-link" title="Google Scholar"><i class="fas fa-graduation-cap"></i></a>
+                    </span>
+                </div>
+                <div class="person-affiliation">${flagHtml} <span class="person-univ">${person.university}</span> ${badges}</div>
+            </td>
+            <td class="score-col">
+                <span class="score-value">${person.totalScore.toFixed(2)}</span>
+            </td>
+        `;
     });
 }
 
@@ -716,36 +815,33 @@ function hideLoadingSpinner() {
     document.getElementById('loadingSpinner').style.display = 'none';
 }
 
-function updateStats(data) {
-    const totalUniversities = data.length;
-    
-    // Count unique authors from faculty data for filtered universities and selected categories
+function updateStats(rankings) {
     const selectedCats = getSelectedCategories();
-    const filteredUniversityNames = new Set(data.map(uni => uni.University));
-    
+    const filteredUniversityNames = new Set(rankings.map(u => u.University));
+
     const uniqueAuthors = new Set();
     facultyData.forEach(faculty => {
-        // Check if faculty's university is in the filtered list
         if (filteredUniversityNames.has(faculty.University)) {
-            // Check if faculty's category is in selected categories
-            if (selectedCats.length === 0 || selectedCats.includes(faculty.Category)) {
+            const conf = faculty.Conference?.trim();
+            if (selectedCats.length === 0 || selectedCats.includes(conf)) {
                 const authorName = faculty['Faculty Name'];
-                if (authorName) {
-                    uniqueAuthors.add(authorName);
-                }
+                if (authorName) uniqueAuthors.add(authorName);
             }
         }
     });
-    
-    const totalAuthors = uniqueAuthors.size;
-    const activeFilters = getActiveFilterCount();
-    
-    document.getElementById('totalUniversities').textContent = totalUniversities.toLocaleString();
-    document.getElementById('totalScore').textContent = totalAuthors.toLocaleString();
-    document.getElementById('activeFilters').textContent = activeFilters;
-    
-    // Update scroll info
-    document.getElementById('totalCount').textContent = totalUniversities.toLocaleString();
+
+    document.getElementById('totalUniversities').textContent = rankings.length.toLocaleString();
+    document.getElementById('totalScore').textContent = uniqueAuthors.size.toLocaleString();
+    document.getElementById('activeFilters').textContent = getActiveFilterCount();
+    document.getElementById('totalCount').textContent = rankings.length.toLocaleString();
+}
+
+function updateStatsPeople(people) {
+    const univs = new Set(people.map(p => p.university));
+    document.getElementById('totalUniversities').textContent = people.length.toLocaleString();
+    document.getElementById('totalScore').textContent = univs.size.toLocaleString();
+    document.getElementById('activeFilters').textContent = getActiveFilterCount();
+    document.getElementById('totalCount').textContent = people.length.toLocaleString();
 }
 
 function getActiveFilterCount() {
@@ -839,10 +935,10 @@ function getTopFields(universityName, chartData, globalMaxScore) {
 
 function getFieldDisplayName(field) {
     const displayNames = {
-        'Machine Learning': 'Machine Learning',
-        'Computer Vision & Image Processing': 'Computer Vision',
-        'Natural Language Processing': 'Natural Language Processing',
-        'The Web & Information Retrieval': 'The Web & Information Retrieval'
+        'ICML': 'ICML', 'NEURIPS': 'NeurIPS',
+        'CVPR': 'CVPR', 'ECCV': 'ECCV', 'ICCV': 'ICCV',
+        'ACL': 'ACL', 'EMNLP': 'EMNLP',
+        'SIGIR': 'SIGIR', 'WWW': 'WWW',
     };
     return displayNames[field] || field;
 }
@@ -982,22 +1078,36 @@ function exportData() {
         alert('No data to export');
         return;
     }
-    
-    const csvContent = [
-        ['Rank', 'University', 'Continent', 'Impact Score'],
-        ...lastFiltered.map((uni, index) => [
-            index + 1,
-            uni.University,
-            uni.Continent,
-            uni.Score.toFixed(2)
-        ])
-    ].map(row => row.join(',')).join('\n');
-    
+
+    let csvContent;
+    if (viewMode === 'people') {
+        csvContent = [
+            ['Rank', 'Researcher', 'University', 'Conferences', 'Impact Score'],
+            ...lastFiltered.map((p, i) => [
+                i + 1,
+                `"${p.name}"`,
+                `"${p.university}"`,
+                `"${Array.from(p.conferences).sort().join('; ')}"`,
+                p.totalScore.toFixed(2)
+            ])
+        ].map(row => row.join(',')).join('\n');
+    } else {
+        csvContent = [
+            ['Rank', 'University', 'Continent', 'Impact Score'],
+            ...lastFiltered.map((uni, i) => [
+                i + 1,
+                `"${uni.University}"`,
+                uni.Continent,
+                uni.Score.toFixed(2)
+            ])
+        ].map(row => row.join(',')).join('\n');
+    }
+
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ai-rankings-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `ai-rankings-${viewMode}-${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
